@@ -1,0 +1,67 @@
+# Despliegue local completo: API + Redis opcional compartido.
+# Copia .env.example a .env antes de `docker compose up --build`.
+services:
+  api:
+    build: .
+    env_file:
+      # Los hashes PBKDF2 contienen "$": sin raw, Compose los interpola y corrompe.
+      - path: .env
+        format: raw
+    environment:
+      # SQLite persistente en el volumen; en Render se usa PostgreSQL.
+      IG_DATABASE_URL: sqlite:////data/igscraper.db
+      IG_RATE_LIMIT_BACKEND: redis
+      IG_REDIS_URL: redis://redis:6379/0
+      IG_JOB_BACKEND: redis
+      IG_ALLOWED_HOSTS: 127.0.0.1,localhost,api
+    ports:
+      # Solo loopback: la API se publica detrás de un reverse proxy.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - api-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  worker:
+    build: .
+    env_file:
+      - path: .env
+        format: raw
+    command: ["python", "-m", "app.worker"]
+    environment:
+      IG_DATABASE_URL: sqlite:////data/igscraper.db
+      IG_RATE_LIMIT_BACKEND: redis
+      IG_REDIS_URL: redis://redis:6379/0
+      IG_JOB_BACKEND: redis
+    volumes:
+      - api-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    # Solo loopback: Redis no tiene autenticación y no debe quedar expuesto.
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  api-data:
+  redis-data:

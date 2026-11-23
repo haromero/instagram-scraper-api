@@ -1,0 +1,70 @@
+# Blueprint de Render: API Docker + PostgreSQL + Key Value (Redis).
+# Los secretos marcados con sync:false se rellenan en el Dashboard.
+services:
+  - type: web
+    name: instagram-scraper-api
+    runtime: docker
+    plan: free
+    region: oregon
+    numInstances: 1
+    healthCheckPath: /api/v1/health
+    maxShutdownDelaySeconds: 60
+    # Un único servicio gratis: el launcher arranca gunicorn y el worker
+    # Redis Streams como procesos hijos. Para escalar, añade un servicio
+    # `type: worker` con la misma imagen y `dockerCommand: python -m app.worker`.
+    dockerCommand: python -m app.launch
+    envVars:
+      - key: IG_JWT_SECRET
+        generateValue: true
+      - key: IG_ENCRYPTION_KEY
+        sync: false
+      - key: IG_CLIENT_ID
+        value: cli_abc123
+      - key: IG_CLIENT_SECRET_HASH
+        sync: false
+      - key: IG_ADMIN_CLIENT_ID
+        value: cli_platform
+      - key: IG_ADMIN_CLIENT_SECRET_HASH
+        sync: false
+      - key: IG_DATABASE_URL
+        fromDatabase:
+          name: ig-postgres
+          property: connectionString
+      - key: IG_REDIS_URL
+        fromService:
+          type: keyvalue
+          name: ig-redis
+          property: connectionString
+      - key: IG_RATE_LIMIT_BACKEND
+        value: redis
+      - key: IG_JOB_BACKEND
+        value: redis
+      - key: IG_SCRAPER_BACKEND
+        value: bluesky
+      - key: IG_OPENAPI_ENABLED
+        value: "true"
+      - key: IG_DEBUG
+        value: "false"
+      - key: IG_FORCE_HTTPS
+        value: "false"
+      - key: IG_ALLOWED_HOSTS
+        value: "*.onrender.com,localhost"
+      - key: IG_TRUSTED_PROXIES
+        value: ""
+      - key: IG_VALIDATE_OUTBOUND_DNS
+        value: "true"
+
+  - type: keyvalue
+    name: ig-redis
+    plan: free
+    region: oregon
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+    persistenceMode: off
+
+databases:
+  - name: ig-postgres
+    plan: free
+    region: oregon
+    databaseName: igscraper
+    ipAllowList: []

@@ -1,0 +1,9 @@
+# La imagen se construye en Linux (Render/Docker): forzar LF en el repo.
+* text=auto eol=lf
+
+*.db binary
+*.db-shm binary
+*.db-wal binary
+*.png binary
+*.jpg binary
+*.ico binary
