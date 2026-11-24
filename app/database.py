@@ -9,9 +9,14 @@ settings = get_settings()
 
 
 def normalize_database_url(url: str) -> str:
-    """Render entrega ``postgresql://``; usamos psycopg3 con el driver explícito."""
-    if url.startswith("postgresql://"):
-        return "postgresql+psycopg://" + url[len("postgresql://") :]
+    """Acepta ``postgres://`` y ``postgresql://``; fuerza el driver psycopg3.
+
+    Render entrega ``postgres://`` en algunas cuentas y ``postgresql://`` en
+    otras. SQLAlchemy 2.x no acepta el esquema corto, así que lo normalizamos.
+    """
+    for prefix in ("postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix) :]
     return url
 
 

@@ -131,9 +131,12 @@ def test_requirements_include_deployment_dependencies():
 
 
 def test_postgres_url_uses_psycopg3_driver():
-    """Render entrega postgresql://; SQLAlchemy necesita el driver psycopg3."""
+    """Render entrega postgres:// o postgresql://; SQLAlchemy necesita psycopg3."""
     from app.database import normalize_database_url
 
+    assert normalize_database_url("postgres://u:p@host/db") == (
+        "postgresql+psycopg://u:p@host/db"
+    )
     assert normalize_database_url("postgresql://u:p@host/db") == (
         "postgresql+psycopg://u:p@host/db"
     )
