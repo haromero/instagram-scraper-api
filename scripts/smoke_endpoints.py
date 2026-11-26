@@ -137,7 +137,9 @@ def main() -> int:
             200,
         )
 
-        # 7-12. Perfiles.
+        # 7-12. Perfiles. El shortcode se toma de un post real: con el backend
+        # de Bluesky es un AT URI o ``did|rkey``, no un ID corto de Instagram.
+        profile_posts = None
         for name, path in (
             ("GET /profiles/{username}", "/api/v1/profiles/nasa"),
             ("GET /profiles/{username}/posts", "/api/v1/profiles/nasa/posts"),
@@ -146,13 +148,18 @@ def main() -> int:
             ("GET /profiles/{username}/stories", "/api/v1/profiles/nasa/stories"),
             ("GET /profiles/{username}/highlights", "/api/v1/profiles/nasa/highlights"),
         ):
-            check(name, client.get(path, headers=client_headers), 200)
+            response = check(name, client.get(path, headers=client_headers), 200)
+            if path.endswith("/posts"):
+                profile_posts = response
+
+        assert profile_posts is not None
+        shortcode = profile_posts.json()["data"][0]["shortcode"]
 
         # 13-15. Posts.
         for name, path in (
-            ("GET /posts/{shortcode}", "/api/v1/posts/ABC123"),
-            ("GET /posts/{shortcode}/comments", "/api/v1/posts/ABC123/comments"),
-            ("GET /posts/{shortcode}/likes", "/api/v1/posts/ABC123/likes"),
+            ("GET /posts/{shortcode}", f"/api/v1/posts/{shortcode}"),
+            ("GET /posts/{shortcode}/comments", f"/api/v1/posts/{shortcode}/comments"),
+            ("GET /posts/{shortcode}/likes", f"/api/v1/posts/{shortcode}/likes"),
         ):
             check(name, client.get(path, headers=client_headers), 200)
 
