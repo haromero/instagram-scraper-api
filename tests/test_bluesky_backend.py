@@ -169,6 +169,36 @@ def test_get_posts_maps_media_and_schema():
     assert validated[0].shortcode == f"{DID}|3abc"
 
 
+def test_short_username_resolves_to_did_and_is_cached():
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    def search_route(request: httpx.Request) -> httpx.Response:
+        calls.append(("search", dict(request.url.params)))
+        return httpx.Response(
+            200, json={"actors": [{"did": DID, "handle": HANDLE}]}
+        )
+
+    def feed_route(request: httpx.Request) -> httpx.Response:
+        calls.append(("feed", dict(request.url.params)))
+        return httpx.Response(200, json={"feed": [{"post": _post()}]})
+
+    adapter = _scraper(
+        {
+            "/xrpc/app.bsky.actor.searchActors": search_route,
+            "/xrpc/app.bsky.feed.getAuthorFeed": feed_route,
+            "/xrpc/app.bsky.actor.getProfile": _profile(),
+        }
+    )
+
+    posts = adapter.get_posts("nasa", count=1)
+    adapter.get_profile("@nasa")
+
+    assert len(posts) == 1
+    assert calls[0] == ("search", {"q": "nasa", "limit": "10"})
+    assert calls[1][1]["actor"] == DID
+    assert [name for name, _ in calls].count("search") == 1
+
+
 def test_get_post_accepts_composite_shortcode():
     seen: list[str] = []
 

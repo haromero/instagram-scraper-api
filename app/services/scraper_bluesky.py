@@ -154,6 +154,7 @@ class BlueskyScraper:
         self._backoff = max(0.0, float(backoff_seconds))
         self._session_lock = threading.Lock()
         self._access_jwt: str | None = None
+        self._actor_cache: dict[str, str] = {}
         self._client = client or httpx.Client(
             timeout=timeout,
             transport=transport,
@@ -358,6 +359,46 @@ class BlueskyScraper:
             {"upstream": "bluesky"},
         )
 
+    def _resolve_actor(self, username: str) -> str:
+        """Devuelve un actor válido para los endpoints ``/xrpc`` de Bluesky.
+
+        AT Protocol exige un DID o un handle totalmente cualificado. Los nombres
+        cortos que llegan desde la API de Instagram (``nasa``) ya no son
+        aceptados por AppView, así que se resuelven a un DID mediante búsqueda
+        de actores. El resultado se cachea por instancia.
+        """
+        actor = _actor(username)
+        if (
+            not actor
+            or actor.startswith("did:")
+            or actor.startswith("at://")
+            or "." in actor
+        ):
+            return actor
+
+        if actor in self._actor_cache:
+            return self._actor_cache[actor]
+
+        data = self._request(
+            "app.bsky.actor.searchActors", {"q": actor, "limit": 10}
+        )
+        actors = data.get("actors") or []
+        short = actor.lower()
+        exact = next(
+            (
+                item
+                for item in actors
+                if str(item.get("handle") or "").split(".")[0].lower() == short
+            ),
+            None,
+        )
+        chosen = exact or (actors[0] if actors else None)
+        did = str((chosen or {}).get("did") or "")
+        if not did:
+            raise APIError(404, "NOT_FOUND", "El usuario no existe en Bluesky.")
+        self._actor_cache[actor] = did
+        return did
+
     def _sleep(self, attempt: int, retry_after: str | None = None) -> None:
         if retry_after:
             try:
@@ -482,7 +523,7 @@ class BlueskyScraper:
     # ------------------------------------------------------------------ API
     def get_profile(self, username: str) -> dict:
         data = self._request(
-            "app.bsky.actor.getProfile", {"actor": _actor(username)}
+            "app.bsky.actor.getProfile", {"actor": self._resolve_actor(username)}
         )
         return {
             "username": data.get("handle") or _actor(username),
@@ -502,7 +543,7 @@ class BlueskyScraper:
     def get_posts(self, username: str, count: int = 120) -> list[dict]:
         return self._collect(
             "app.bsky.feed.getAuthorFeed",
-            {"actor": _actor(username), "filter": "posts_with_replies"},
+            {"actor": self._resolve_actor(username), "filter": "posts_with_replies"},
             "feed",
             count,
             transform=lambda item: self._map_post(item.get("post") or {}),
@@ -556,7 +597,7 @@ class BlueskyScraper:
     def get_followers(self, username: str, count: int = 120) -> list[dict]:
         return self._collect(
             "app.bsky.graph.getFollowers",
-            {"actor": _actor(username)},
+            {"actor": self._resolve_actor(username)},
             "followers",
             count,
             transform=_map_user,
@@ -565,7 +606,7 @@ class BlueskyScraper:
     def get_following(self, username: str, count: int = 120) -> list[dict]:
         return self._collect(
             "app.bsky.graph.getFollows",
-            {"actor": _actor(username)},
+            {"actor": self._resolve_actor(username)},
             "follows",
             count,
             transform=_map_user,
