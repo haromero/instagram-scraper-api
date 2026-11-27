@@ -170,6 +170,39 @@ def test_readme_documents_both_deployment_targets():
         assert marker in readme
 
 
+def test_generate_secrets_produces_verifiable_values():
+    """El generador de secretos debe emitir hashes que validan su secreto."""
+    from app.passwords import verify_secret
+
+    env = os.environ.copy()
+    env["DISABLE_SQLALCHEMY_CEXT"] = "1"
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "generate_secrets.py")],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    values = dict(
+        line.split("=", 1)
+        for line in result.stdout.strip().splitlines()
+        if "=" in line
+    )
+    assert set(values) == {
+        "IG_ENCRYPTION_KEY",
+        "IG_JWT_SECRET",
+        "CLIENT_SECRET",
+        "IG_CLIENT_SECRET_HASH",
+        "ADMIN_SECRET",
+        "IG_ADMIN_CLIENT_SECRET_HASH",
+    }
+    assert verify_secret(values["CLIENT_SECRET"], values["IG_CLIENT_SECRET_HASH"])
+    assert verify_secret(values["ADMIN_SECRET"], values["IG_ADMIN_CLIENT_SECRET_HASH"])
+    assert len(values["IG_JWT_SECRET"]) >= 32
+
+
 def test_openapi_is_disabled_by_default(client):
     """El contrato no se publica por defecto en producción."""
     assert client.get("/openapi.json").status_code == 404

@@ -441,25 +441,39 @@ otro. Para escalar el consumo, añade un servicio `type: worker` con la misma
 imagen y `dockerCommand: python -m app.worker`.
 
 1. Sube el proyecto a GitHub/GitLab.
-2. En Render: **New → Blueprint** y selecciona el repositorio.
-3. Rellena las variables marcadas como `sync: false`:
+2. En Render: **New → Blueprint** (no *Web Service*) y selecciona el
+   repositorio, rama `main` y `render.yaml`. El Blueprint crea
+   `instagram-scraper-api`, `ig-postgres` e `ig-redis` y cablea sus URLs.
+   Si ya creaste un *Web Service* normal, bórralo antes: no crea la BD ni
+   Redis y deja `dockerCommand`/`healthCheckPath` vacíos.
+3. Genera un set nuevo de secretos con:
 
 ```powershell
-.\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))"  # IG_JWT_SECRET
-.\.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"  # IG_ENCRYPTION_KEY
-.\.venv\Scripts\python.exe scripts/hash_secret.py "tu-secreto-de-cliente"  # IG_CLIENT_SECRET_HASH
+.\.venv\Scripts\python.exe scripts/generate_secrets.py
+# o, para no imprimirlos en pantalla:
+.\.venv\Scripts\python.exe scripts/generate_secrets.py --out "$env:LOCALAPPDATA\Temp\opencode\render-secrets.txt"
 ```
 
-4. Verifica `https://<servicio>.onrender.com/api/v1/health`.
-5. `IG_OPENAPI_ENABLED=true` publica `/openapi.json` sin habilitar `/docs`
+4. Pega en el formulario del Blueprint los valores de `IG_ENCRYPTION_KEY`,
+   `IG_CLIENT_SECRET_HASH` e `IG_ADMIN_CLIENT_SECRET_HASH`. `IG_JWT_SECRET` lo
+   genera Render (`generateValue: true`); si lo rotas manualmente, actualízalo
+   también en el servicio. Guarda `CLIENT_SECRET` y `ADMIN_SECRET` para el smoke.
+5. Verifica `https://<servicio>.onrender.com/api/v1/health`.
+6. `IG_OPENAPI_ENABLED=true` publica `/openapi.json` sin habilitar `/docs`
    (`IG_DEBUG=false`); así se puede importar el contrato en RapidAPI.
-6. El plan `free` duerme tras inactividad. Para producción, sube el plan y
+7. El plan `free` duerme tras inactividad. Para producción, sube el plan y
    ajusta `WEB_CONCURRENCY`; con Redis configurado, varios workers comparten
    rate limit, revocación, candados y la cola de jobs.
-7. La Key Value gratuita no persiste datos. Si Redis se reinicia, el worker
+8. La Key Value gratuita no persiste datos. Si Redis se reinicia, el worker
    republica al arrancar los jobs que siguen en `queued` en PostgreSQL; la
    ejecución es idempotente. Para no perder mensajes, usa un plan con
    persistencia.
+
+Si vas a gestionar Render desde una API key (por ejemplo con el MCP de
+Render), crea la key con **All** en el workspace, o al menos: Workspaces y
+Services en lectura, Environment variables y Deploys en lectura/escritura,
+Monitoring en lectura, y Postgres/Key Value en lectura/escritura. Una key sin
+esos permisos puede leer el servicio pero no crear la BD ni Redis (`forbidden`).
 
 `IG_JOB_VISIBILITY_SECONDS` controla cuándo se recupera un mensaje cuyo worker
 murió; `IG_JOB_MAX_ATTEMPTS` cuántos intentos se permiten antes de moverlo al
